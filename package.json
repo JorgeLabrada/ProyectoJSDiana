@@ -1,0 +1,22 @@
+{
+  "name": "pro",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "none"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JorgeLabrada/ProyectoJSDiana.git"
+  },
+  "keywords": [
+    "none"
+  ],
+  "author": "me",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JorgeLabrada/ProyectoJSDiana/issues"
+  },
+  "homepage": "https://github.com/JorgeLabrada/ProyectoJSDiana#readme"
+}
