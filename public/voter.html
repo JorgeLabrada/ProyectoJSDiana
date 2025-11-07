@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Votante</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    .countdown { font-weight: 600; }
+  </style>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+      <span class="navbar-brand">Votación</span>
+    </div>
+  </nav>
+
+  <main class="container my-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Participa con tu voto</h5>
+            <p id="status" class="text-muted mb-2">Esperando sesión...</p>
+            <span id="countdown" class="badge text-bg-secondary countdown d-none"></span>
+
+            <div id="options" class="d-flex flex-wrap gap-2 my-3 d-none"></div>
+
+            <div id="msg" class="alert alert-success d-none" role="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const deviceIdKey = 'mqtt_vote_device_id';
+    function getDeviceId() {
+      let id = localStorage.getItem(deviceIdKey);
+      if (!id) { id = 'dev_' + Math.random().toString(36).slice(2) + Date.now(); localStorage.setItem(deviceIdKey, id); }
+      return id;
+    }
+
+    const statusEl = document.getElementById('status');
+    const optionsEl = document.getElementById('options');
+    const countdownEl = document.getElementById('countdown');
+    const msgEl = document.getElementById('msg');
+
+    let session = null; // { sessionId, options, endAt, active }
+    let hasVotedThisSession = false;
+
+    function setCountdown(endAt) {
+      function tick() {
+        const rem = Math.max(0, endAt - Date.now());
+        const s = Math.ceil(rem / 1000);
+        countdownEl.textContent = `Termina en ${s}s`;
+        countdownEl.classList.toggle('d-none', rem <= 0);
+        if (rem <= 0) return;
+        setTimeout(tick, 500);
+      }
+      tick();
+    }
+
+    function renderOptions(opts) {
+      optionsEl.innerHTML = '';
+      opts.forEach(o => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary';
+        btn.textContent = o;
+        btn.onclick = () => vote(o);
+        btn.disabled = hasVotedThisSession;
+        optionsEl.appendChild(btn);
+      });
+      optionsEl.classList.remove('d-none');
+    }
+
+    function vote(choice) {
+      if (!session || !session.active) return;
+      if (hasVotedThisSession) return;
+      const payload = {
+        sessionId: session.sessionId,
+        deviceId: getDeviceId(),
+        choice
+      };
+      client.publish('voting/vote', JSON.stringify(payload));
+      hasVotedThisSession = true;
+      Array.from(optionsEl.querySelectorAll('button')).forEach(b => b.disabled = true);
+      msgEl.textContent = '¡Voto enviado!';
+      msgEl.classList.remove('d-none');
+    }
+
+    // Connect MQTT over WebSocket
+    const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = location.host;
+    const url = `${protocol}://${host}/mqtt`;
+    const client = mqtt.connect(url);
+
+    client.on('connect', () => {
+      statusEl.textContent = 'Conectado. Esperando inicio de sesión...';
+      client.subscribe('voting/session');
+    });
+
+    client.on('message', (topic, payload) => {
+      if (topic === 'voting/session') {
+        const data = JSON.parse(payload.toString());
+        if (data.type === 'started') {
+          session = { sessionId: data.sessionId, options: data.options, endAt: data.endAt, active: true };
+          hasVotedThisSession = false;
+          statusEl.textContent = 'Sesión activa';
+          setCountdown(session.endAt);
+          renderOptions(session.options);
+          msgEl.classList.add('d-none');
+        } else if (data.type === 'ended') {
+          if (session && data.sessionId === session.sessionId) {
+            session.active = false;
+            statusEl.textContent = 'Sesión finalizada';
+            optionsEl.classList.add('d-none');
+            msgEl.textContent = 'Gracias por participar';
+            msgEl.classList.remove('d-none');
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

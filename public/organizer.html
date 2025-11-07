@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Organizador</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+      <span class="navbar-brand">Panel del Organizador</span>
+    </div>
+  </nav>
+
+  <main class="container my-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Configurar sesión</h5>
+
+            <div class="mb-3">
+              <label class="form-label">Opciones (separadas por comas)</label>
+              <input id="options" class="form-control" placeholder="A,B,C" value="A,B" />
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Duración (segundos)</label>
+              <input id="duration" type="number" class="form-control" value="60" />
+            </div>
+
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <button id="start" class="btn btn-primary">Iniciar sesión</button>
+              <span id="sessionInfo" class="badge text-bg-info"></span>
+            </div>
+
+            <hr/>
+            <h6>Conteo en vivo</h6>
+            <pre id="tally" class="bg-body-secondary p-3 rounded">{}</pre>
+            <div id="total" class="fw-semibold"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = location.host;
+    const url = `${protocol}://${host}/mqtt`;
+    const client = mqtt.connect(url);
+
+    const optionsInput = document.getElementById('options');
+    const durationInput = document.getElementById('duration');
+    const startBtn = document.getElementById('start');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const tallyPre = document.getElementById('tally');
+    const totalDiv = document.getElementById('total');
+
+    let currentSessionId = null;
+
+    client.on('connect', () => {
+      client.subscribe('voting/session');
+      client.subscribe('voting/tally');
+    });
+
+    client.on('message', (topic, payload) => {
+      const data = JSON.parse(payload.toString());
+      if (topic === 'voting/session') {
+        if (data.type === 'started') {
+          currentSessionId = data.sessionId;
+          sessionInfo.textContent = `Sesión ${data.sessionId} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+          tallyPre.textContent = '{}';
+          totalDiv.textContent = '';
+        } else if (data.type === 'ended') {
+          if (currentSessionId === data.sessionId) {
+            sessionInfo.textContent = `Sesión ${data.sessionId} finalizada`;
+          }
+        }
+      } else if (topic === 'voting/tally') {
+        tallyPre.textContent = JSON.stringify(data.tally, null, 2);
+        totalDiv.textContent = `Votos totales: ${data.totalVotes}`;
+      }
+    });
+
+    startBtn.onclick = async () => {
+      const options = optionsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+      const durationSeconds = Number(durationInput.value);
+      const resp = await fetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ options, durationSeconds })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        currentSessionId = data.sessionId;
+        sessionInfo.textContent = `Sesión ${data.sessionId} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+      } else {
+        alert('Error: ' + (data.error || 'No se pudo iniciar'));
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,22 +1,17 @@
 {
-  "name": "pro",
+  "name": "mqtt-voting-system",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Simple MQTT-based voting system with embedded broker, voter and organizer UIs",
+  "main": "server.js",
   "scripts": {
-    "test": "none"
+    "start": "node server.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JorgeLabrada/ProyectoJSDiana.git"
-  },
-  "keywords": [
-    "none"
-  ],
-  "author": "me",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/JorgeLabrada/ProyectoJSDiana/issues"
-  },
-  "homepage": "https://github.com/JorgeLabrada/ProyectoJSDiana#readme"
+  "license": "MIT",
+  "dependencies": {
+    "aedes": "^0.51.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "websocket-stream": "^5.5.2",
+    "ws": "^8.18.0"
+  }
 }
