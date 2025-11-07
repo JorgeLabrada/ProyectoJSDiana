@@ -36,6 +36,19 @@
               <span id="sessionInfo" class="badge text-bg-info"></span>
             </div>
 
+            <div id="share" class="alert alert-secondary d-none" role="alert">
+              <div class="d-flex flex-column gap-2">
+                <div>
+                  <span class="fw-semibold">Código:</span>
+                  <span id="code" class="badge text-bg-dark"></span>
+                </div>
+                <div class="input-group">
+                  <input id="link" class="form-control" readonly />
+                  <button id="copy" class="btn btn-outline-secondary">Copiar</button>
+                </div>
+              </div>
+            </div>
+
             <hr/>
             <h6>Conteo en vivo</h6>
             <pre id="tally" class="bg-body-secondary p-3 rounded">{}</pre>
@@ -58,8 +71,13 @@
     const sessionInfo = document.getElementById('sessionInfo');
     const tallyPre = document.getElementById('tally');
     const totalDiv = document.getElementById('total');
+    const shareBox = document.getElementById('share');
+    const codeSpan = document.getElementById('code');
+    const linkInput = document.getElementById('link');
+    const copyBtn = document.getElementById('copy');
 
     let currentSessionId = null;
+    let currentCode = null;
 
     client.on('connect', () => {
       client.subscribe('voting/session');
@@ -71,7 +89,13 @@
       if (topic === 'voting/session') {
         if (data.type === 'started') {
           currentSessionId = data.sessionId;
-          sessionInfo.textContent = `Sesión ${data.sessionId} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+          currentCode = data.code || currentCode;
+          sessionInfo.textContent = `Sesión ${data.code || data.sessionId} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+          if (currentCode) {
+            codeSpan.textContent = currentCode;
+            linkInput.value = `${location.origin}/vote/${currentCode}`;
+            shareBox.classList.remove('d-none');
+          }
           tallyPre.textContent = '{}';
           totalDiv.textContent = '';
         } else if (data.type === 'ended') {
@@ -96,9 +120,24 @@
       const data = await resp.json();
       if (data.ok) {
         currentSessionId = data.sessionId;
-        sessionInfo.textContent = `Sesión ${data.sessionId} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+        currentCode = data.code;
+        sessionInfo.textContent = `Sesión ${data.code} termina en ${Math.ceil((data.endAt - Date.now())/1000)}s`;
+        codeSpan.textContent = currentCode;
+        linkInput.value = `${location.origin}${data.link}`;
+        shareBox.classList.remove('d-none');
       } else {
         alert('Error: ' + (data.error || 'No se pudo iniciar'));
+      }
+    };
+
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(linkInput.value);
+        copyBtn.textContent = 'Copiado';
+        setTimeout(() => (copyBtn.textContent = 'Copiar'), 1500);
+      } catch (e) {
+        linkInput.select();
+        document.execCommand('copy');
       }
     };
   </script>

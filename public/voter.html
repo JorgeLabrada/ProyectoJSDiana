@@ -23,12 +23,21 @@
         <div class="card shadow-sm">
           <div class="card-body">
             <h5 class="card-title">Participa con tu voto</h5>
-            <p id="status" class="text-muted mb-2">Esperando sesión...</p>
+            <p id="status" class="text-muted mb-2">Ingresa el código de sesión o usa un enlace directo.</p>
             <span id="countdown" class="badge text-bg-secondary countdown d-none"></span>
 
             <div id="options" class="d-flex flex-wrap gap-2 my-3 d-none"></div>
 
             <div id="msg" class="alert alert-success d-none" role="alert"></div>
+
+            <div id="joinByCode" class="mt-3">
+              <label class="form-label">Código de sesión</label>
+              <div class="input-group">
+                <input id="codeInput" class="form-control" placeholder="ABCDE" maxlength="5" />
+                <button id="joinBtn" class="btn btn-primary">Entrar</button>
+              </div>
+              <div id="codeError" class="text-danger small mt-1 d-none">Código inválido o sesión no encontrada.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -48,7 +57,7 @@
     const countdownEl = document.getElementById('countdown');
     const msgEl = document.getElementById('msg');
 
-    let session = null; // { sessionId, options, endAt, active }
+    let session = null; // { sessionId, options, endAt, active, code }
     let hasVotedThisSession = false;
 
     function setCountdown(endAt) {
@@ -99,7 +108,7 @@
     const client = mqtt.connect(url);
 
     client.on('connect', () => {
-      statusEl.textContent = 'Conectado. Esperando inicio de sesión...';
+      statusEl.textContent = 'Conectado.';
       client.subscribe('voting/session');
     });
 
@@ -107,12 +116,15 @@
       if (topic === 'voting/session') {
         const data = JSON.parse(payload.toString());
         if (data.type === 'started') {
-          session = { sessionId: data.sessionId, options: data.options, endAt: data.endAt, active: true };
-          hasVotedThisSession = false;
-          statusEl.textContent = 'Sesión activa';
-          setCountdown(session.endAt);
-          renderOptions(session.options);
-          msgEl.classList.add('d-none');
+          // Only auto-bind if we are already on that session (via code path)
+          if (session && session.sessionId === data.sessionId) {
+            session = { sessionId: data.sessionId, options: data.options, endAt: data.endAt, active: true, code: data.code };
+            hasVotedThisSession = false;
+            statusEl.textContent = `Sesión ${data.code} activa`;
+            setCountdown(session.endAt);
+            renderOptions(session.options);
+            msgEl.classList.add('d-none');
+          }
         } else if (data.type === 'ended') {
           if (session && data.sessionId === session.sessionId) {
             session.active = false;
@@ -124,6 +136,46 @@
         }
       }
     });
+
+    async function loadByCode(code) {
+      try {
+        const resp = await fetch(`/api/session/${code}`);
+        if (!resp.ok) throw new Error('not_found');
+        const data = await resp.json();
+        session = { sessionId: data.sessionId, options: data.options, endAt: data.endAt, active: data.active, code: data.code };
+        hasVotedThisSession = false;
+        document.getElementById('joinByCode').classList.add('d-none');
+        statusEl.textContent = `Sesión ${data.code} ${data.active ? 'activa' : 'inactiva'}`;
+        if (data.active) {
+          setCountdown(session.endAt);
+          renderOptions(session.options);
+          msgEl.classList.add('d-none');
+        }
+      } catch (e) {
+        const err = document.getElementById('codeError');
+        err.classList.remove('d-none');
+      }
+    }
+
+    // Deep link /vote/ABCDE
+    (function init() {
+      const m = location.pathname.match(/\/vote\/([A-Za-z0-9]{5})$/);
+      if (m) {
+        const code = m[1].toUpperCase();
+        loadByCode(code);
+      }
+    })();
+
+    document.getElementById('joinBtn').onclick = () => {
+      const input = document.getElementById('codeInput');
+      const code = (input.value || '').trim().toUpperCase();
+      if (!/^[A-Z0-9]{5}$/.test(code)) {
+        document.getElementById('codeError').classList.remove('d-none');
+        return;
+      }
+      // Navigate to pretty URL so it can be compartido fácilmente
+      location.href = `/vote/${code}`;
+    };
   </script>
 </body>
 </html>

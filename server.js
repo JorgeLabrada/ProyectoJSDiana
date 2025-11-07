@@ -14,6 +14,10 @@ app.use(express.json());
 // Static files
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
+// Serve voter by code link
+app.get('/vote/:code', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'voter.html'));
+});
 
 // Create HTTP server to share between Express and MQTT over WebSocket
 const httpServer = http.createServer(app);
@@ -32,7 +36,14 @@ wss.on('connection', (ws) => {
 const tcpServer = net.createServer(aedes.handle);
 
 // Voting session state
-let currentSession = null; // { id, options: string[], endAt: ms, active: bool, votes: Map, tally: Object, timer }
+let currentSession = null; // { id, code, options: string[], endAt: ms, active: bool, votes: Map, tally: Object, timer }
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 5; i++) c += chars[Math.floor(Math.random() * chars.length)];
+  return c;
+}
 
 function newTally(options) {
   const t = {};
@@ -71,9 +82,14 @@ app.post('/api/start', (req, res) => {
     return res.status(400).json({ error: 'durationSeconds must be a positive number' });
   }
   const id = 'sess_' + Date.now();
+  let code = genCode();
+  if (currentSession && currentSession.active) {
+    while (code === currentSession.code) code = genCode();
+  }
   const endAt = Date.now() + dur * 1000;
   currentSession = {
     id,
+    code,
     options: options.map(String),
     endAt,
     active: true,
@@ -85,18 +101,19 @@ app.post('/api/start', (req, res) => {
   publish('voting/session', {
     type: 'started',
     sessionId: id,
+    code,
     options: currentSession.options,
     endAt,
   });
 
-  return res.json({ ok: true, sessionId: id, endAt, options: currentSession.options });
+  return res.json({ ok: true, sessionId: id, code, endAt, options: currentSession.options, link: `/vote/${code}` });
 });
 
 // REST: status
 app.get('/api/status', (req, res) => {
   if (!currentSession) return res.json({ active: false });
-  const { id, options, endAt, active, tally } = currentSession;
-  return res.json({ sessionId: id, options, endAt, active, tally });
+  const { id, code, options, endAt, active, tally } = currentSession;
+  return res.json({ sessionId: id, code, options, endAt, active, tally });
 });
 
 // REST: results
@@ -104,6 +121,14 @@ app.get('/api/results', (req, res) => {
   if (!currentSession) return res.json({ active: false, tally: {} });
   const { id, tally, active } = currentSession;
   return res.json({ sessionId: id, active, tally });
+});
+
+// REST: get session by code
+app.get('/api/session/:code', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  if (!currentSession || currentSession.code !== code) return res.status(404).json({ error: 'not_found' });
+  const { id, options, endAt, active } = currentSession;
+  return res.json({ sessionId: id, code, options, endAt, active });
 });
 
 // Handle incoming votes via MQTT topic voting/vote
